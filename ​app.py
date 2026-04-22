@@ -1,5 +1,5 @@
 import streamlit as st
-from constants import MATERIAL_DATA, SCREW_DATA
+MATERIAL_DATA = { ... }
 from physics_engine import calculate_boss_stress
 
 st.set_page_config(page_title="Boss Failure Sim", layout="centered")
