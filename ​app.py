@@ -1,60 +1,45 @@
 import streamlit as st
-import pandas as pd
 from constants import MATERIAL_DATA, SCREW_DATA
+from physics_engine import calculate_boss_stress
 
-def calculate_hoop_stress(d_screw, id_boss, od_boss):
-    """기구학적 Hoop Stress 계산 로직"""
-    interference = d_screw - id_boss
-    if interference <= 0:
-        return 0
-    
-    # Lamé Equation: 내압에 의한 최대 원주 방향 응력
-    # 간섭량에 비례하는 가상의 압력 P 산출 (단순화 모델)
-    pressure = (interference / id_boss) * 100  # 계수는 재질 탄성계수에 따라 보정 가능
-    stress = pressure * ((od_boss**2 + id_boss**2) / (od_boss**2 - id_boss**2))
-    return stress
+st.set_page_config(page_title="Boss Failure Sim", layout="centered")
 
-def main():
-    st.set_page_config(page_title="Boss Design Simulator", page_icon="⚙️")
-    st.title("🚀 Boss Failure Analysis Tool")
-    st.markdown("---")
+st.title("⚙️ Boss Design & Failure Simulator")
+st.info("기구 설계자를 위한 롯데케미칼 소재 기반 체결 시뮬레이터")
 
-    # Sidebar: Input Parameters
-    with st.sidebar:
-        st.header("Project Settings")
-        selected_mat = st.selectbox("Material (Lotte Chemical)", list(MATERIAL_DATA.keys()))
-        selected_screw = st.selectbox("Screw Spec", list(SCREW_DATA.keys()))
-        
-        st.header("Geometry")
-        boss_id = st.number_input("Boss ID (mm)", value=SCREW_DATA[selected_screw]['d'] * 0.8)
-        boss_od = st.number_input("Boss OD (mm)", value=SCREW_DATA[selected_screw]['d'] * 2.0)
+# 입력 섹션
+with st.container():
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_screw = st.selectbox("1. Screw 규격", list(SCREW_DATA.keys()))
+        selected_mat = st.selectbox("2. Boss 재질", list(MATERIAL_DATA.keys()))
+    with col2:
+        screw_d = SCREW_DATA[selected_screw]['d']
+        boss_id = st.number_input("3. Boss 내경(ID) mm", value=screw_d * 0.88, step=0.05)
+        boss_od = st.number_input("4. Boss 외경(OD) mm", value=screw_d * 2.2, step=0.1)
 
-    # Calculation
+# 유효성 검사 (M2.6 등 내경 오류 방지)
+if boss_id >= screw_d:
+    st.error(f"⚠️ 설계 오류: 내경({boss_id})이 나사 외경({screw_d})보다 큽니다. 체결력이 발생하지 않습니다.")
+else:
+    # 계산 실행
     yield_str = MATERIAL_DATA[selected_mat]['yield_strength']
-    screw_d = SCREW_DATA[selected_screw]['d']
-    calc_stress = calculate_hoop_stress(screw_d, boss_id, boss_od)
+    calc_stress = calculate_boss_stress(screw_d, boss_id, boss_od)
+    safety_factor = yield_str / calc_stress if calc_stress > 0 else 0
+
+    # 결과 출력
+    st.divider()
+    st.subheader("💡 분석 결과")
     
-    if calc_stress > 0:
-        safety_factor = yield_str / calc_stress
+    m1, m2 = st.columns(2)
+    m1.metric("발생 예상 응력", f"{calc_stress:.1f} MPa")
+    m2.metric("안전율 (S.F)", f"{safety_factor:.2f}")
+
+    if safety_factor < 1.0:
+        st.error("🚨 파손 확정: Boss가 세로로 쪼개질(Cracking) 확률이 매우 높습니다.")
+    elif safety_factor < 1.5:
+        st.warning("⚠️ 주의: 백화 현상 혹은 조립 후 장기 크리프 파손이 우려됩니다.")
     else:
-        safety_factor = float('inf')
+        st.success("✅ 안전: 적정 설계 범위입니다.")
 
-    # Dashboard Display
-    st.subheader(f"Analysis: {selected_mat} + {selected_screw}")
-    
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Max Hoop Stress", f"{calc_stress:.1f} MPa")
-    m2.metric("Yield Strength", f"{yield_str} MPa")
-    m3.metric("Safety Factor", f"{safety_factor:.2f}")
-
-    # GitHub 협업을 위한 피드백 섹션
-    if safety_factor < 1.2:
-        st.error("❗ 파손 위험: 보스 균열(Cracking) 가능성이 매우 높습니다.")
-        st.info("💡 제안: OD를 키우거나, Screw 간섭량을 줄이기 위해 ID를 조정하세요.")
-    elif safety_factor < 2.0:
-        st.warning("⚠️ 주의: 장기 크리프(Creep)에 의한 백화 현상이 발생할 수 있습니다.")
-    else:
-        st.success("✅ 안전: 적정 설계 범위 내에 있습니다.")
-
-if __name__ == "__main__":
-    main()
+    st.caption(f"소재 특징: {MATERIAL_DATA[selected_mat]['description']}")
