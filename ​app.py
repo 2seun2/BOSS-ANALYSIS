@@ -1,121 +1,117 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-import time
 
 # ==========================================
-# 1. 소재 및 규격 데이터
+# 1. 아세아볼트/KS 표준 규격 기반 데이터 (태핑 나사 2종 기준)
 # ==========================================
-MATERIAL_DATA = {
-    "ABS (HG-0760)": {"yield_strength": 45},
-    "PC (SC-1100)": {"yield_strength": 62},
-    "PC/ABS (HAC-8250)": {"yield_strength": 55},
-    "PA6 (KN-120)": {"yield_strength": 70},
-    "POM (N-109)": {"yield_strength": 65}
+SCREW_SPEC_DB = {
+    "M2.0": {"major_d": 2.0, "minor_d": 1.4, "pitch": 0.4, "head_d": 3.5},
+    "M2.6": {"major_d": 2.6, "minor_d": 1.9, "pitch": 0.45, "head_d": 4.5},
+    "M3.0": {"major_d": 3.0, "minor_d": 2.2, "pitch": 0.5, "head_d": 5.5},
+    "M4.0": {"major_d": 4.0, "minor_d": 2.9, "pitch": 0.7, "head_d": 7.0}
 }
 
-SCREW_DATA = {
-    "M2.0": {"d": 2.0, "p": 0.4},
-    "M2.6": {"d": 2.6, "p": 0.45},
-    "M3.0": {"d": 3.0, "p": 0.5},
-    "M4.0": {"d": 4.0, "p": 0.7}
+MATERIAL_DB = {
+    "ABS (Lotte HG-0760)": {"yield": 45, "modulus": 2300},
+    "PC (Lotte SC-1100)": {"yield": 62, "modulus": 2400},
+    "PC/ABS (Lotte HAC-8250)": {"yield": 55, "modulus": 2500},
+    "PA6 (Lotte KN-120)": {"yield": 70, "modulus": 2800},
+    "POM (Lotte N-109)": {"yield": 65, "modulus": 2700}
 }
 
-st.set_page_config(page_title="Boss Sim Pro", layout="wide")
-st.title("🔩 Boss Assembly Simulator Pro")
+st.set_page_config(page_title="Engineer Boss Sim", layout="wide")
+st.title("🔩 Professional Boss-Screw Analysis (KS/Asia Bolt Standard)")
 
-# 사이드바: 상세 설정
+# 사이드바 설정
 with st.sidebar:
-    st.header("📐 Hardware Spec")
-    sel_screw = st.selectbox("Screw 규격", list(SCREW_DATA.keys()))
-    s_length = st.number_input("Screw 유효 길이 (mm)", value=6.0, step=0.5)
+    st.header("⚙️ Screw Specification")
+    sel_name = st.selectbox("Screw Size", list(SCREW_SPEC_DB.keys()))
+    spec = SCREW_SPEC_DB[sel_name]
+    
+    s_len = st.number_input("Nominal Length (L)", value=8.0, step=0.5)
+    s_effective = s_len - (spec['pitch'] * 2) # 불완전 나사부 제외 유효 길이 추정
     
     st.header("🏗️ Boss Design")
-    d_screw = SCREW_DATA[sel_screw]['d']
-    p_screw = SCREW_DATA[sel_screw]['p']
+    b_id = st.number_input("Boss Inner Dia (ID)", value=round(spec['major_d']*0.85, 2), step=0.05)
+    b_od = st.number_input("Boss Outer Dia (OD)", value=round(spec['major_d']*2.2, 2), step=0.1)
+    b_depth = st.number_input("Hole Depth", value=s_len + 1.0, step=0.5)
+    b_c = st.number_input("Chamfer (C)", value=0.3, step=0.1)
     
-    b_id = st.number_input("Boss ID (내경)", value=round(d_screw * 0.88, 2), step=0.05)
-    b_od = st.number_input("Boss OD (외경)", value=round(d_screw * 2.2, 2), step=0.1)
-    b_height = st.number_input("Boss Hole Depth (깊이)", value=s_length + 2.0, step=0.5)
-    b_chamfer = st.number_input("Chamfer (C)", value=0.3, step=0.1)
-    
-    sel_mat = st.selectbox("Material", list(MATERIAL_DATA.keys()))
+    sel_mat = st.selectbox("Material", list(MATERIAL_DB.keys()))
+    mat = MATERIAL_DB[sel_mat]
 
 # ==========================================
-# 3. 시각화 함수 (나사선 및 사이즈 표기)
+# 2. 정밀 해석 및 시각화 로직
 # ==========================================
-def draw_assembly(progress=0, is_simulating=False):
-    # 창 크기를 줄이기 위해 figsize 조정 (5, 7 -> 4, 6)
+def draw_detailed_view():
     fig, ax = plt.subplots(figsize=(4, 6))
     
-    # Boss 그리기
-    boss_color = 'silver'
-    ax.plot([-b_od/2, -b_od/2, -b_id/2-b_chamfer, -b_id/2, -b_id/2], [0, b_height, b_height, b_height-b_chamfer, 0], color='black', lw=2)
-    ax.plot([b_od/2, b_od/2, b_id/2+b_chamfer, b_id/2, b_id/2], [0, b_height, b_height, b_height-b_chamfer, 0], color='black', lw=2)
+    # 1. Boss Drawing
+    ax.plot([-b_od/2, -b_od/2, -b_id/2-b_c, -b_id/2, -b_id/2, b_id/2, b_id/2, b_id/2+b_c, b_od/2, b_od/2],
+            [0, b_depth, b_depth, b_depth-b_c, 0, 0, b_depth-b_c, b_depth, b_depth, 0], color='black', lw=2)
     
-    # Screw 정보 텍스트 (명시적 표기)
-    info_text = f"Spec: {sel_screw}\nPitch: {p_screw}mm\nLength: {s_length}mm"
-    ax.text(-b_od*1.2, b_height+2, info_text, fontsize=9, bbox=dict(facecolor='white', alpha=0.5))
+    # 2. Screw Drawing (Assembly State)
+    screw_y_top = b_depth
+    screw_y_bot = b_depth - s_len
+    
+    # Major/Minor Dia 표현
+    ax.add_patch(plt.Rectangle((-spec['minor_d']/2, screw_y_bot), spec['minor_d'], s_len, color='gray', alpha=0.5))
+    
+    # Threads (나사산 zigzag)
+    thread_y = np.arange(screw_y_bot + 0.5, screw_y_top, spec['pitch'])
+    for y in thread_y:
+        ax.plot([-spec['major_d']/2, spec['major_d']/2], [y, y + spec['pitch']/2], color='darkblue', lw=0.8)
+    
+    # Head
+    ax.add_patch(plt.Rectangle((-spec['head_d']/2, screw_y_top), spec['head_d'], 1.2, color='black'))
 
-    if is_simulating:
-        # 2초 시뮬레이션을 위한 위치 계산 (y축 이동)
-        start_y = b_height + 1
-        end_y = b_height - s_length
-        current_y = start_y - (progress * (start_y - end_y))
-        
-        # Screw Body (나사선 표현)
-        ax.add_patch(plt.Rectangle((-d_screw/2, current_y), d_screw, s_length, color='gray', alpha=0.9))
-        
-        # 나사선(Thread) 시각화: 지그재그 패턴
-        thread_steps = int(s_length / p_screw)
-        for j in range(thread_steps):
-            ty = current_y + (j * p_screw)
-            ax.plot([-d_screw/2, d_screw/2], [ty, ty + p_screw/2], color='white', lw=0.5, alpha=0.6)
-            
-        # Screw Head
-        ax.add_patch(plt.Rectangle((-d_screw, current_y + s_length), d_screw*2, 0.8, color='black'))
-
-    ax.set_xlim(-b_od * 1.5, b_od * 1.5)
-    ax.set_ylim(-1, b_height + 5)
+    ax.set_xlim(-b_od, b_od)
+    ax.set_ylim(-1, b_depth + 4)
     ax.set_aspect('equal')
     ax.axis('off')
     return fig
 
 # ==========================================
-# 4. 실행부
+# 3. 메인 화면 출력
 # ==========================================
-col_view, col_stat = st.columns([1, 1])
+col1, col2 = st.columns([4, 6])
 
-with col_view:
-    st.subheader("🔍 Section View")
-    plot_spot = st.empty()
-    plot_spot.pyplot(draw_assembly())
+with col1:
+    st.subheader("📐 Assembly Section")
+    st.pyplot(draw_detailed_view())
 
-with col_stat:
-    st.subheader("📈 Simulation Control")
-    if st.button("체결 시뮬레이션 실행 (2s)"):
-        # 2초 시뮬레이션: 0.05초 간격으로 40프레임
-        for i in range(41):
-            plot_spot.pyplot(draw_assembly(progress=i/40, is_simulating=True))
-            time.sleep(0.05)
-        
-        # 공학적 결과 분석
-        interference = d_screw - b_id
-        yield_str = MATERIAL_DATA[sel_mat]['yield_strength']
-        
-        st.divider()
-        if s_length > b_height:
-            st.error("🚨 설계 오류: Screw 길이가 Boss 홀 깊이보다 깁니다! (Bottoming Out)")
-        elif interference <= 0:
-            st.warning("⚠️ 체결력 없음: 내경이 너무 큽니다.")
-        else:
-            ratio = (b_od**2 + b_id**2) / (b_od**2 - b_id**2)
-            stress = (interference / b_id) * 1000 * ratio
-            sf = yield_str / stress
-            
-            if sf < 1.0:
-                st.error(f"❌ 파손: 안전율 {sf:.2f} (응력 {stress:.1f}MPa)")
-            elif sf < 1.5:
-                st.warning(f"⚠️ 경고: 안전율 {sf:.2f} (백화 발생 가능)")
-            else:
-                st.success(f"✅ 양호: 안전율 {sf:.2f}")
+with col2:
+    st.subheader("📊 Engineering Analysis")
+    
+    # 정확한 간섭량 해석 (Interference Analysis)
+    # 나사산이 파고드는 깊이가 핵심
+    engagement = (spec['major_d'] - b_id) / 2
+    
+    # Hoop Stress calculation (Thick-walled cylinder theory)
+    # P = E * (interference) / ID 공식 응용
+    interference_ratio = (spec['major_d'] - b_id) / b_id
+    stress = mat['modulus'] * interference_ratio * ((b_od**2 + b_id**2) / (b_od**2 - b_id**2)) * 0.1 # 실험적 보정 계수
+    
+    sf = mat['yield'] / stress
+
+    # 결과 대시보드
+    st.write(f"**Target Screw:** {sel_name} ({spec['major_d']} x {s_len}L)")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Screw 골경 ($d_1$)", f"{spec['minor_d']} mm")
+    c2.metric("나사산 높이 ($h$)", f"{(spec['major_d']-spec['minor_d'])/2:.2f} mm")
+    c3.metric("실제 산 걸림량", f"{engagement:.2f} mm")
+
+    st.divider()
+    
+    if sf < 1.0:
+        st.error(f"❌ 파손 위험 (안전율: {sf:.2f})")
+        st.markdown(f"- **해석:** 발생 응력(**{stress:.1f} MPa**)이 소재 항복 강도(**{mat['yield']} MPa**)를 초과합니다.")
+        st.markdown("- **조치:** Boss 내경(ID)을 확대하여 나사산 걸림량을 줄이거나 OD를 보강하십시오.")
+    elif sf < 1.5:
+        st.warning(f"⚠️ 설계 주의 (안전율: {sf:.2f})")
+        st.write("조립은 가능하나 환경 응력 균열(ESC) 또는 백화 현상이 발생할 수 있습니다.")
+    else:
+        st.success(f"✅ 설계 적합 (안전율: {sf:.2f})")
+
+    st.info(f"💡 **기구 팁:** {sel_mat} 소재에서 {sel_name} 체결 시, 추천 Boss ID는 {spec['major_d']*0.88:.2f}mm 내외입니다.")
